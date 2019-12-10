@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using MediatR;
-using Flunt.Notifications;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using SC.SDK.NetStandard.Crosscutting.Contracts;
 
 namespace SC.SDK.NetStandard.DomainCore
 {
-    public abstract class Entity : Notifiable
+    public abstract class Entity : Validable
     {
         private Guid _id;
         public virtual Guid Id
