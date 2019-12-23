@@ -26,10 +26,15 @@ namespace SC.SDK.NetStandard.Crosscutting.Contracts
             return this;
         }
 
-        //public Validable MergeNotifications()
-        //{
-
-        //}
+        public Validable MergeValidations()
+        {
+            if (_value != null && _value.GetType().IsSubclassOf(typeof(Notifiable)))
+            {
+                var notifiableObject = (Notifiable)_value;
+                AddNotifications(notifiableObject);
+            }
+            return this;
+        }
 
         public Validable IsNotNull()
         {

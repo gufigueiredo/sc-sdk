@@ -11,7 +11,8 @@
   <ItemGroup>
     <PackageReference Include="Flunt" Version="1.0.4" />
     <PackageReference Include="MediatR" Version="7.0.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+    <PackageReference Include="RestSharp" Version="106.6.10" />
   </ItemGroup>
 
   <ItemGroup>
