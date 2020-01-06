@@ -5,10 +5,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using System.Net.Cache;
 
 namespace SC.SDK.NetStandard.BuildingBlocks.Http
 {
-    public class ServiceCaller
+    public class ServiceCaller : IServiceCaller
     {
         public string AuthorizationHeader { get; private set; }
         public bool IgnoreAuthorization { get; set; }
@@ -17,26 +18,33 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
         public IReadOnlyCollection<RequestHeader> Headers => _headers;
         private List<RequestHeader> _headers;
 
-        private readonly ILogger _logger;
+        private ILogger _logger;
 
-        public ServiceCaller(ILogger logger)
+        public ServiceCaller()
         {
             _headers = new List<RequestHeader>();
-            _logger = logger;
         }
 
-        public ServiceCaller(ILogger logger, bool useFluentResponse)
+        public IServiceCaller Create()
         {
-            _headers = new List<RequestHeader>();
-            _logger = logger;
-            UseFluentResponse = useFluentResponse;
+            return new ServiceCaller() as IServiceCaller;
         }
 
-        public void AddAuthorization(string token)
+        public IServiceCaller Create(ILogger logger)
         {
-            if (string.IsNullOrWhiteSpace(token))
-                throw new ArgumentNullException(nameof(token));
-            AuthorizationHeader = token;
+            return new ServiceCaller()
+            {
+                _logger = logger
+            } as IServiceCaller;
+        }
+
+        public IServiceCaller Create(ILogger logger, bool useFluentResponse)
+        {
+            return new ServiceCaller()
+            {
+                _logger = logger, 
+                UseFluentResponse = useFluentResponse
+            } as IServiceCaller;
         }
 
         public void AddAuthorization(AuthenticationSchema schema, string hash)
@@ -47,14 +55,13 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             switch (schema)
             {
                 case AuthenticationSchema.Basic:
-                    AddAuthorization($"Basic {hash}");
+                    AuthorizationHeader = $"Basic {hash}";
                     break;
                 case AuthenticationSchema.Bearer:
-                    AddAuthorization($"Bearer {hash}");
+                    AuthorizationHeader = $"Bearer {hash}";
                     break;
             }
         }
-
 
         public void AddHeader(string key, string value)
         {
@@ -79,6 +86,17 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             where T : new()
         {
             return ExecuteRequest<T>(baseUrl, path, Method.GET);
+        }
+
+        public Task<ServiceResponse> DoGet(string baseUrl, string path, params RequestParameter[] parameters)
+        {
+            return ExecuteRequest(baseUrl, path, Method.GET, null, parameters.ToList());
+        }
+
+        public Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path, params RequestParameter[] parameters)
+            where T : new()
+        {
+            return ExecuteRequest<T>(baseUrl, path, Method.GET, null, parameters.ToList());
         }
 
         public Task<ServiceResponse> DoPost(string baseUrl, string path)
@@ -181,7 +199,8 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
 
         private void LogFailedRequest(Exception exception, HttpStatusCode statusCode, string message)
         {
-            _logger.LogError(exception, $"[ErroRequisicao][{statusCode}] {message}");
+            if (_logger != null)
+                _logger.LogError(exception, $"[ErroRequisicao][{statusCode}] {message}");
         }
     }
 
@@ -189,5 +208,24 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
     {
         Basic,
         Bearer
+    }
+
+    public interface IServiceCaller
+    {
+        IServiceCaller Create();
+        IServiceCaller Create(ILogger logger);
+        IServiceCaller Create(ILogger logger, bool useFluentResponse);
+        void AddAuthorization(AuthenticationSchema schema, string hash);
+        void AddHeader(string key, string value);
+        void RemoveHeader(string key);
+        void ClearHeaders();
+        Task<ServiceResponse> DoGet(string baseUrl, string path);
+        Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path) where T : new();
+        Task<ServiceResponse> DoPost(string baseUrl, string path);
+        Task<ServiceResponse> DoPost(string baseUrl, string path, object body);
+        Task<ServiceResponse> DoPost(string baseUrl, string path, List<RequestParameter> parameters = null);
+        Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path) where T : new();
+        Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path, object body) where T : new();
+        Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path, List<RequestParameter> parameters = null) where T : new();
     }
 }
