@@ -1,11 +1,11 @@
-﻿using SC.SDK.NetStandard.BuildingBlocks.Logging;
-using RestSharp;
+﻿using RestSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using System.Net.Cache;
+using Microsoft.Extensions.Logging;
 
 namespace SC.SDK.NetStandard.BuildingBlocks.Http
 {
@@ -143,7 +143,7 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             {
                 LogFailedRequest(response.ErrorException, response.StatusCode, response.ErrorMessage);
                 if (!UseFluentResponse)
-                    throw response.ErrorException;
+                    throw new ServiceResponseException(response.StatusCode, response.ErrorMessage, response.ErrorException);
             }
 
             return new ServiceResponse<T>(response.Data, response.StatusCode, response.IsSuccessful, response.ErrorMessage, response.ErrorException);
@@ -159,7 +159,7 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             {
                 LogFailedRequest(response.ErrorException, response.StatusCode, response.ErrorMessage);
                 if (!UseFluentResponse)
-                    throw response.ErrorException;
+                    throw new ServiceResponseException(response.StatusCode, response.ErrorMessage, response.ErrorException);
             }
 
             return new ServiceResponse(response.Content, response.StatusCode, response.IsSuccessful, response.ErrorMessage, response.ErrorException);
@@ -220,7 +220,9 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
         void RemoveHeader(string key);
         void ClearHeaders();
         Task<ServiceResponse> DoGet(string baseUrl, string path);
+        Task<ServiceResponse> DoGet(string baseUrl, string path, params RequestParameter[] parameters);
         Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path) where T : new();
+        Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path, params RequestParameter[] parameters) where T : new();
         Task<ServiceResponse> DoPost(string baseUrl, string path);
         Task<ServiceResponse> DoPost(string baseUrl, string path, object body);
         Task<ServiceResponse> DoPost(string baseUrl, string path, List<RequestParameter> parameters = null);

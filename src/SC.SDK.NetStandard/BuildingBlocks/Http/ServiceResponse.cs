@@ -50,8 +50,4 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             return this;
         }
     }
-
-    public class ServiceResponseException : Exception
-    {
-    }
 }

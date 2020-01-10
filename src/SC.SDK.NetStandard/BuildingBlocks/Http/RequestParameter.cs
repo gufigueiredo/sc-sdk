@@ -10,9 +10,9 @@
             Name = name;
             Value = value;
         }
-        public static RequestHeader Create(string name, string value)
+        public static RequestParameter Create(string name, string value)
         {
-            return new RequestHeader(name, value);
+            return new RequestParameter(name, value);
         }
     }
 }
