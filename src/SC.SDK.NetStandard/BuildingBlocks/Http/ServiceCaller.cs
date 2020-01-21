@@ -139,14 +139,16 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             var request = ConfigureRequest(path, method, body, parameters, headers);
 
             IRestResponse<T> response = await client.ExecuteTaskAsync<T>(request);
+            string responseErr = null;
             if (!response.IsSuccessful)
             {
-                LogFailedRequest(response.ErrorException, response.StatusCode, response.ErrorMessage);
+                responseErr = string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
+                LogFailedRequest(response.ErrorException, response.StatusCode, responseErr);
                 if (!UseFluentResponse)
-                    throw new ServiceResponseException(response.StatusCode, response.ErrorMessage, response.ErrorException);
+                    throw new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
             }
 
-            return new ServiceResponse<T>(response.Data, response.StatusCode, response.IsSuccessful, response.ErrorMessage, response.ErrorException);
+            return new ServiceResponse<T>(response.Data, response.StatusCode, response.IsSuccessful, responseErr, response.ErrorException);
         }
 
         public async Task<ServiceResponse> ExecuteRequest(string baseUrl, string path, Method method, object body = null, List<RequestParameter> parameters = null, List<RequestHeader> headers = null)
@@ -155,14 +157,16 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             var request = ConfigureRequest(path, method, body, parameters, headers);
 
             IRestResponse response = await client.ExecuteTaskAsync(request);
+            string responseErr = null;
             if (!response.IsSuccessful)
             {
-                LogFailedRequest(response.ErrorException, response.StatusCode, response.ErrorMessage);
+                responseErr = string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
+                LogFailedRequest(response.ErrorException, response.StatusCode, responseErr);
                 if (!UseFluentResponse)
-                    throw new ServiceResponseException(response.StatusCode, response.ErrorMessage, response.ErrorException);
+                    throw new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
             }
 
-            return new ServiceResponse(response.Content, response.StatusCode, response.IsSuccessful, response.ErrorMessage, response.ErrorException);
+            return new ServiceResponse(response.Content, response.StatusCode, response.IsSuccessful, responseErr, response.ErrorException);
         }
 
         private RestRequest ConfigureRequest(string path, Method method, object body = null, List<RequestParameter> parameters = null, List<RequestHeader> headers = null)
