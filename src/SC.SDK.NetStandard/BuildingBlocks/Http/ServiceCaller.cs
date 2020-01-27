@@ -6,6 +6,7 @@ using System.Net;
 using System.Threading.Tasks;
 using System.Net.Cache;
 using Microsoft.Extensions.Logging;
+using Polly;
 
 namespace SC.SDK.NetStandard.BuildingBlocks.Http
 {
@@ -132,23 +133,56 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             return ExecuteRequest<T>(baseUrl, path, Method.POST, null, parameters);
         }
 
-        public async Task<ServiceResponse<T>> ExecuteRequest<T>(string baseUrl, string path, Method method, object body = null, List<RequestParameter> parameters = null, List<RequestHeader> headers = null)
+        public async Task<ServiceResponse<T>> ExecuteRequest<T>(string baseUrl,
+            string path, Method method, object body = null, List<RequestParameter> parameters = null,
+            List<RequestHeader> headers = null, int retries = 3, TimeSpan? timeBetweenRetries = null)
             where T : new()
         {
             var client = new RestClient(baseUrl);
             var request = ConfigureRequest(path, method, body, parameters, headers);
 
             IRestResponse<T> response = await client.ExecuteTaskAsync<T>(request);
+
+            //var caller = _serviceCaller.Create(_logger);
+            //caller.AddHeader(KnownLegacyProperties.CUS_NUM, codigoCliente);
+            //ConfigureSensedia(caller);
+
+            //var response = await Policy
+            //    .HandleResult<ServiceResponse<PedidoIntegrationModel>>(r =>
+            //        r.StatusCode != System.Net.HttpStatusCode.NotFound &&
+            //        (int)r.StatusCode >= (int)System.Net.HttpStatusCode.BadRequest)
+            //    .WaitAndRetryAsync(3, retryAttemp => TimeSpan.FromSeconds(Math.Pow(2, retryAttemp)), (exception, timeSpan) =>
+            //    {
+            //        _logger.LogError(exception.Exception, "[ObterUltimoPedidoPorClinte]");
+            //    })
+            //    .ExecuteAsync(() =>
+            //    {
+            //        return caller
+            //                .DoGet<PedidoIntegrationModel>(_environment.ServiceEndpoints.AntiCorruptionLayer, $"/pedidos/ultimo_pedido");
+            //    });
+
+            //var model = _mapper.Map<PedidoReadModel>(response.Content);
+            //return model;
+
+            var retryPolicy = Policy.
+                HandleResult<IRestResponse<T>>(r => r.StatusCode != HttpStatusCode.NotFound && !r.IsSuccessful)
+                .Or<Exception>()
+                .WaitAndRetryAsync(retries, retryAttemp => TimeSpan.FromSeconds(Math.Pow(2, retryAttemp)), (exception, timeSpan) =>
+                {
+                    _logger.LogError(exception.Exception, "[ObterUltimoPedidoPorClinte]");
+                });
+
+
             string responseErr = null;
+            ServiceResponseException responseEx = null;
             if (!response.IsSuccessful)
             {
                 responseErr = string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
                 LogFailedRequest(response.ErrorException, response.StatusCode, responseErr);
-                if (!UseFluentResponse)
-                    throw new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
+                responseEx =  new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
             }
 
-            return new ServiceResponse<T>(response.Data, response.StatusCode, response.IsSuccessful, responseErr, response.ErrorException);
+            return new ServiceResponse<T>(response.Data, response.StatusCode, response.IsSuccessful, responseErr, responseEx);
         }
 
         public async Task<ServiceResponse> ExecuteRequest(string baseUrl, string path, Method method, object body = null, List<RequestParameter> parameters = null, List<RequestHeader> headers = null)
@@ -158,15 +192,15 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
 
             IRestResponse response = await client.ExecuteTaskAsync(request);
             string responseErr = null;
+            ServiceResponseException responseEx = null;
             if (!response.IsSuccessful)
             {
                 responseErr = string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
                 LogFailedRequest(response.ErrorException, response.StatusCode, responseErr);
-                if (!UseFluentResponse)
-                    throw new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
+                responseEx = new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
             }
 
-            return new ServiceResponse(response.Content, response.StatusCode, response.IsSuccessful, responseErr, response.ErrorException);
+            return new ServiceResponse(response.Content, response.StatusCode, response.IsSuccessful, responseErr, responseEx);
         }
 
         private RestRequest ConfigureRequest(string path, Method method, object body = null, List<RequestParameter> parameters = null, List<RequestHeader> headers = null)
