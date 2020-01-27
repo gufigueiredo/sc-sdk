@@ -156,6 +156,7 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             ServiceResponseException responseEx = null;
             if (!response.IsSuccessful)
             {
+                response.Data = default;
                 responseErr = string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
                 LogFailedRequest(response.ErrorException, response.StatusCode, responseErr);
                 if (!string.IsNullOrWhiteSpace(responseErr) || response.ErrorException != null)
