@@ -140,38 +140,17 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
         {
             var client = new RestClient(baseUrl);
             var request = ConfigureRequest(path, method, body, parameters, headers);
+            var fullUrl = client.BuildUri(request);
 
-            IRestResponse<T> response = await client.ExecuteTaskAsync<T>(request);
-
-            //var caller = _serviceCaller.Create(_logger);
-            //caller.AddHeader(KnownLegacyProperties.CUS_NUM, codigoCliente);
-            //ConfigureSensedia(caller);
-
-            //var response = await Policy
-            //    .HandleResult<ServiceResponse<PedidoIntegrationModel>>(r =>
-            //        r.StatusCode != System.Net.HttpStatusCode.NotFound &&
-            //        (int)r.StatusCode >= (int)System.Net.HttpStatusCode.BadRequest)
-            //    .WaitAndRetryAsync(3, retryAttemp => TimeSpan.FromSeconds(Math.Pow(2, retryAttemp)), (exception, timeSpan) =>
-            //    {
-            //        _logger.LogError(exception.Exception, "[ObterUltimoPedidoPorClinte]");
-            //    })
-            //    .ExecuteAsync(() =>
-            //    {
-            //        return caller
-            //                .DoGet<PedidoIntegrationModel>(_environment.ServiceEndpoints.AntiCorruptionLayer, $"/pedidos/ultimo_pedido");
-            //    });
-
-            //var model = _mapper.Map<PedidoReadModel>(response.Content);
-            //return model;
-
-            var retryPolicy = Policy.
+            var policy = Policy.
                 HandleResult<IRestResponse<T>>(r => r.StatusCode != HttpStatusCode.NotFound && !r.IsSuccessful)
                 .Or<Exception>()
-                .WaitAndRetryAsync(retries, retryAttemp => TimeSpan.FromSeconds(Math.Pow(2, retryAttemp)), (exception, timeSpan) =>
+                .WaitAndRetryAsync(retries, retryAttemp => timeBetweenRetries ?? TimeSpan.FromSeconds(Math.Pow(2, retryAttemp)), (exception, timeSpan, context) =>
                 {
-                    _logger.LogError(exception.Exception, "[ObterUltimoPedidoPorClinte]");
+                    _logger.LogError(exception.Exception, $"[ExecuteRequest][{exception.Result?.StatusCode.ToString()}] Request failed to {fullUrl.ToString()}");
                 });
 
+            IRestResponse<T> response = await policy.ExecuteAsync(() => client.ExecuteTaskAsync<T>(request));
 
             string responseErr = null;
             ServiceResponseException responseEx = null;
@@ -179,18 +158,30 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             {
                 responseErr = string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
                 LogFailedRequest(response.ErrorException, response.StatusCode, responseErr);
-                responseEx =  new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
+                if (!string.IsNullOrWhiteSpace(responseErr) || response.ErrorException != null)
+                    responseEx =  new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
             }
 
-            return new ServiceResponse<T>(response.Data, response.StatusCode, response.IsSuccessful, responseErr, responseEx);
+            return new ServiceResponse<T>(response.Data, response, response.StatusCode, response.IsSuccessful, responseErr, responseEx);
         }
 
-        public async Task<ServiceResponse> ExecuteRequest(string baseUrl, string path, Method method, object body = null, List<RequestParameter> parameters = null, List<RequestHeader> headers = null)
+        public async Task<ServiceResponse> ExecuteRequest(string baseUrl, string path, Method method, object body = null, 
+            List<RequestParameter> parameters = null, List<RequestHeader> headers = null, int retries = 3, TimeSpan? timeBetweenRetries = null)
         {
             var client = new RestClient(baseUrl);
             var request = ConfigureRequest(path, method, body, parameters, headers);
+            var fullUrl = client.BuildUri(request);
 
-            IRestResponse response = await client.ExecuteTaskAsync(request);
+            var policy = Policy.
+                HandleResult<IRestResponse>(r => r.StatusCode != HttpStatusCode.NotFound && !r.IsSuccessful)
+                .Or<Exception>()
+                .WaitAndRetryAsync(retries, retryAttemp => timeBetweenRetries ?? TimeSpan.FromSeconds(Math.Pow(2, retryAttemp)), (exception, timeSpan, context) =>
+                {
+                    _logger.LogError(exception.Exception, $"[ExecuteRequest][{exception.Result?.StatusCode.ToString()}] Request failed to {fullUrl.ToString()}");
+                });
+
+            IRestResponse response = await policy.ExecuteAsync(() => client.ExecuteTaskAsync(request));
+
             string responseErr = null;
             ServiceResponseException responseEx = null;
             if (!response.IsSuccessful)
@@ -200,7 +191,7 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
                 responseEx = new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
             }
 
-            return new ServiceResponse(response.Content, response.StatusCode, response.IsSuccessful, responseErr, responseEx);
+            return new ServiceResponse(response.Content, response, response.StatusCode, response.IsSuccessful, responseErr, responseEx);
         }
 
         private RestRequest ConfigureRequest(string path, Method method, object body = null, List<RequestParameter> parameters = null, List<RequestHeader> headers = null)
