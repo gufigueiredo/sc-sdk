@@ -175,11 +175,6 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             var request = ConfigureRequest(path, method, body, parameters, headers);
             var fullUrl = client.BuildUri(request);
 
-            //_policyRegistry.TryGet<AsyncCircuitBreakerPolicy>("HttpCircuitBreakerPolicy", out var defaultCircuitBreakerPolicy);
-            //if (defaultCircuitBreakerPolicy == null)
-            //{
-            //    _policyRegistry.TryAdd("HttpCircuitBreakerPolicy", defaultCircuitBreakerPolicy);
-            //}
             IRestResponse<T> response = null;
 
             if (policy == null)

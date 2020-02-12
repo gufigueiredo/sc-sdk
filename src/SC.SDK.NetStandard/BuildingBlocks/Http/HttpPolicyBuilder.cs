@@ -35,33 +35,6 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
                 })
                 .WithPolicyKey("RetryPolicy");
 
-            //var circuitBreakerPolicy = Policy
-            //       .HandleResult<IRestResponse<T>>(r => r.StatusCode == HttpStatusCode.GatewayTimeout ||
-            //                                       r.StatusCode == HttpStatusCode.ServiceUnavailable ||
-            //                                       r.StatusCode == HttpStatusCode.RequestTimeout ||
-            //                                       r.StatusCode == HttpStatusCode.BadGateway ||
-            //                                       r.StatusCode == (HttpStatusCode)429 ||
-            //                                       r.ResponseStatus == ResponseStatus.TimedOut ||
-            //                                       r.ResponseStatus == ResponseStatus.Error)
-            //       .CircuitBreakerAsync(
-            //           handledEventsAllowedBeforeBreaking: options.ExceptionsAllowedBeforBreak,
-            //           durationOfBreak: options.BreakDuration,
-            //           onBreak: (response, delay, context) =>
-            //           {
-            //               var logger = context.GetLogger();
-            //               logger.LogError($"[ExecuteRequest][CircuitBreaker] Breaking the circuit for {delay.TotalMilliseconds}ms due to {response.Result?.ErrorMessage}");
-            //           },
-            //           onReset: (context) =>
-            //           {
-            //               var logger = context.GetLogger();
-            //               logger.LogInformation($"[ExecuteRequest][CircuitBreaker] Circuit is closed now");
-            //           },
-            //           onHalfOpen: () =>
-            //           {
-            //               Trace.WriteLine($"[ExecuteRequest][CircuitBreaker] Circuit is half-open. Trying the next call...");
-            //           }
-            //       ).WithPolicyKey("CircuitBreakerPolicy");
-
             var circuitBreakerPolicy = Policy
                    .HandleResult<IRestResponse<T>>(r => r.StatusCode == HttpStatusCode.GatewayTimeout ||
                                                    r.StatusCode == HttpStatusCode.ServiceUnavailable ||
@@ -117,33 +90,6 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
                         logger.LogError(response.Exception, $"[ExecuteRequest][Retry][Failed with StatusCode: {response.Result?.StatusCode.ToString()}][Attempt {retryCount} of {options.RetryOptions.Retries}]");
                 })
                 .WithPolicyKey("RetryPolicy");
-
-            //var circuitBreakerPolicy = Policy
-            //       .HandleResult<IRestResponse>(r => r.StatusCode == HttpStatusCode.GatewayTimeout ||
-            //                                       r.StatusCode == HttpStatusCode.ServiceUnavailable ||
-            //                                       r.StatusCode == HttpStatusCode.RequestTimeout ||
-            //                                       r.StatusCode == HttpStatusCode.BadGateway ||
-            //                                       r.StatusCode == (HttpStatusCode)429 ||
-            //                                       r.ResponseStatus == ResponseStatus.TimedOut ||
-            //                                       r.ResponseStatus == ResponseStatus.Error)
-            //       .CircuitBreakerAsync(
-            //           handledEventsAllowedBeforeBreaking: options.ExceptionsAllowedBeforBreak,
-            //           durationOfBreak: options.BreakDuration,
-            //           onBreak: (response, delay, context) =>
-            //           {
-            //               var logger = context.GetLogger();
-            //               logger.LogError($"[ExecuteRequest][CircuitBreaker] Breaking the circuit for {delay.TotalMilliseconds}ms due to {response.Result?.ErrorMessage}");
-            //           },
-            //           onReset: (context) =>
-            //           {
-            //               var logger = context.GetLogger();
-            //               logger.LogInformation($"[ExecuteRequest][CircuitBreaker] Circuit is closed now");
-            //           },
-            //           onHalfOpen: () =>
-            //           {
-            //               Trace.WriteLine($"[ExecuteRequest][CircuitBreaker] Circuit is half-open. Trying the next call...");
-            //           }
-            //       ).WithPolicyKey("CircuitBreakerPolicy");
 
             var circuitBreakerPolicy = Policy
                    .HandleResult<IRestResponse>(r => r.StatusCode == HttpStatusCode.GatewayTimeout ||
