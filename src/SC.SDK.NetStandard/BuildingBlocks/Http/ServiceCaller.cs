@@ -4,9 +4,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
-using System.Net.Cache;
 using Microsoft.Extensions.Logging;
 using Polly;
+using Polly.Wrap;
 
 namespace SC.SDK.NetStandard.BuildingBlocks.Http
 {
@@ -14,7 +14,7 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
     {
         public string AuthorizationHeader { get; private set; }
         public bool IgnoreAuthorization { get; set; }
-        public bool UseFluentResponse { get; set; }
+        public int RequestTimeout { get; }
 
         public IReadOnlyCollection<RequestHeader> Headers => _headers;
         private List<RequestHeader> _headers;
@@ -26,26 +26,21 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             _headers = new List<RequestHeader>();
         }
 
-        public IServiceCaller Create()
+        protected ServiceCaller(ILogger logger, int requestTimeout = 5)
+            : this()
         {
-            return new ServiceCaller() as IServiceCaller;
+            _logger = logger;
+            RequestTimeout = requestTimeout;
         }
 
-        public IServiceCaller Create(ILogger logger)
+        public IServiceCaller Create<T>(ILogger<T> logger)
         {
-            return new ServiceCaller()
-            {
-                _logger = logger
-            } as IServiceCaller;
+            return new ServiceCaller(logger) as IServiceCaller;
         }
 
-        public IServiceCaller Create(ILogger logger, bool useFluentResponse)
+        public IServiceCaller Create<T>(ILogger<T> logger, int requestTimeout)
         {
-            return new ServiceCaller()
-            {
-                _logger = logger, 
-                UseFluentResponse = useFluentResponse
-            } as IServiceCaller;
+            return new ServiceCaller(logger, requestTimeout) as IServiceCaller;
         }
 
         public void AddAuthorization(AuthenticationSchema schema, string hash)
@@ -83,10 +78,9 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             return ExecuteRequest(baseUrl, path, Method.GET);
         }
 
-        public Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path) 
-            where T : new()
+        public Task<ServiceResponse> DoGet(string baseUrl, string path, AsyncPolicyWrap<IRestResponse> policy)
         {
-            return ExecuteRequest<T>(baseUrl, path, Method.GET);
+            return ExecuteRequest(baseUrl, path, Method.GET, null, null, null, policy);
         }
 
         public Task<ServiceResponse> DoGet(string baseUrl, string path, params RequestParameter[] parameters)
@@ -94,10 +88,33 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             return ExecuteRequest(baseUrl, path, Method.GET, null, parameters.ToList());
         }
 
+        public Task<ServiceResponse> DoGet(string baseUrl, string path, AsyncPolicyWrap<IRestResponse> policy, params RequestParameter[] parameters)
+        {
+            return ExecuteRequest(baseUrl, path, Method.GET, null, parameters.ToList(), null, policy);
+        }
+
+        public Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path) 
+            where T : new()
+        {
+            return ExecuteRequest<T>(baseUrl, path, Method.GET);
+        }
+
+        public Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path, AsyncPolicyWrap<IRestResponse<T>> policy)
+            where T : new()
+        {
+            return ExecuteRequest<T>(baseUrl, path, Method.GET, null, null, null, policy);
+        }
+
         public Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path, params RequestParameter[] parameters)
             where T : new()
         {
             return ExecuteRequest<T>(baseUrl, path, Method.GET, null, parameters.ToList());
+        }
+
+        public Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path, AsyncPolicyWrap<IRestResponse<T>> policy, params RequestParameter[] parameters)
+            where T : new()
+        {
+            return ExecuteRequest<T>(baseUrl, path, Method.GET, null, parameters.ToList(), null, policy);
         }
 
         public Task<ServiceResponse> DoPost(string baseUrl, string path)
@@ -110,10 +127,16 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             return ExecuteRequest(baseUrl, path, Method.POST, body);
         }
 
-        public Task<ServiceResponse> DoPost(string baseUrl, string path, List<RequestParameter> parameters = null)
+        public Task<ServiceResponse> DoPost(string baseUrl, string path, object body, AsyncPolicyWrap<IRestResponse> policy)
         {
-            return ExecuteRequest(baseUrl, path, Method.POST, null, parameters);
+            return ExecuteRequest(baseUrl, path, Method.POST, body, null, null, policy);
         }
+
+        public Task<ServiceResponse> DoPost(string baseUrl, string path, AsyncPolicyWrap<IRestResponse> policy, List<RequestParameter> parameters = null)
+        {
+            return ExecuteRequest(baseUrl, path, Method.POST, null, parameters, null, policy);
+        }
+
 
         public Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path)
             where T : new()
@@ -127,72 +150,100 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             return ExecuteRequest<T>(baseUrl, path, Method.POST, body);
         }
 
-        public Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path, List<RequestParameter> parameters = null)
+        public Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path, object body, AsyncPolicyWrap<IRestResponse<T>> policy)
             where T : new()
         {
-            return ExecuteRequest<T>(baseUrl, path, Method.POST, null, parameters);
+            return ExecuteRequest<T>(baseUrl, path, Method.POST, body, null, null, policy);
+        }
+
+        public Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path, AsyncPolicyWrap<IRestResponse<T>> policy, List<RequestParameter> parameters = null)
+            where T : new()
+        {
+            return ExecuteRequest<T>(baseUrl, path, Method.POST, null, parameters, null, policy);
         }
 
         public async Task<ServiceResponse<T>> ExecuteRequest<T>(string baseUrl,
             string path, Method method, object body = null, List<RequestParameter> parameters = null,
-            List<RequestHeader> headers = null, int retries = 3, TimeSpan? timeBetweenRetries = null)
+            List<RequestHeader> headers = null, AsyncPolicyWrap<IRestResponse<T>> policy = null)
             where T : new()
         {
-            var client = new RestClient(baseUrl);
+            var client = new RestClient(baseUrl)
+            {
+                Timeout = RequestTimeout * 1000
+            };
+
             var request = ConfigureRequest(path, method, body, parameters, headers);
             var fullUrl = client.BuildUri(request);
 
-            var policy = Policy.
-                HandleResult<IRestResponse<T>>(r => r.StatusCode != HttpStatusCode.NotFound && !r.IsSuccessful)
-                .Or<Exception>()
-                .WaitAndRetryAsync(retries, retryAttemp => timeBetweenRetries ?? TimeSpan.FromSeconds(Math.Pow(2, retryAttemp)), (exception, timeSpan, context) =>
-                {
-                    _logger.LogError(exception.Exception, $"[ExecuteRequest][{exception.Result?.StatusCode.ToString()}] Request failed to {fullUrl.ToString()}");
-                });
+            //_policyRegistry.TryGet<AsyncCircuitBreakerPolicy>("HttpCircuitBreakerPolicy", out var defaultCircuitBreakerPolicy);
+            //if (defaultCircuitBreakerPolicy == null)
+            //{
+            //    _policyRegistry.TryAdd("HttpCircuitBreakerPolicy", defaultCircuitBreakerPolicy);
+            //}
+            IRestResponse<T> response = null;
 
-            IRestResponse<T> response = await policy.ExecuteAsync(() => client.ExecuteTaskAsync<T>(request));
+            if (policy == null)
+                response = await client.ExecuteTaskAsync<T>(request);
+            else
+            {
+                Context context = new Context().WithLogger(_logger);
+                response = await policy.ExecuteAsync(ctx => client.ExecuteTaskAsync<T>(request), context);
+            }
+
+            //var cb = policy.GetPolicies();
 
             string responseErr = null;
             ServiceResponseException responseEx = null;
+            HttpStatusCode responseCode = response.StatusCode;
             if (!response.IsSuccessful)
             {
                 response.Data = default;
-                responseErr = string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
-                LogFailedRequest(response.ErrorException, response.StatusCode, responseErr);
+                responseErr = !string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
+                if (response.ResponseStatus == ResponseStatus.TimedOut)
+                    responseCode = HttpStatusCode.GatewayTimeout;
+                LogFailedRequest(response.ErrorException, responseCode, responseErr, fullUrl.ToString());
                 if (!string.IsNullOrWhiteSpace(responseErr) || response.ErrorException != null)
                     responseEx =  new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
             }
 
-            return new ServiceResponse<T>(response.Data, response, response.StatusCode, response.IsSuccessful, responseErr, responseEx);
+            return new ServiceResponse<T>(response.Data, response, responseCode, response.IsSuccessful, responseErr, responseEx);
         }
 
         public async Task<ServiceResponse> ExecuteRequest(string baseUrl, string path, Method method, object body = null, 
-            List<RequestParameter> parameters = null, List<RequestHeader> headers = null, int retries = 3, TimeSpan? timeBetweenRetries = null)
+            List<RequestParameter> parameters = null, List<RequestHeader> headers = null, AsyncPolicyWrap<IRestResponse> policy = null)
         {
-            var client = new RestClient(baseUrl);
+            var client = new RestClient(baseUrl)
+            {
+                Timeout = RequestTimeout * 1000
+            };
+
             var request = ConfigureRequest(path, method, body, parameters, headers);
             var fullUrl = client.BuildUri(request);
 
-            var policy = Policy.
-                HandleResult<IRestResponse>(r => r.StatusCode != HttpStatusCode.NotFound && !r.IsSuccessful)
-                .Or<Exception>()
-                .WaitAndRetryAsync(retries, retryAttemp => timeBetweenRetries ?? TimeSpan.FromSeconds(Math.Pow(2, retryAttemp)), (exception, timeSpan, context) =>
-                {
-                    _logger.LogError(exception.Exception, $"[ExecuteRequest][{exception.Result?.StatusCode.ToString()}] Request failed to {fullUrl.ToString()}");
-                });
+            IRestResponse response = null;
 
-            IRestResponse response = await policy.ExecuteAsync(() => client.ExecuteTaskAsync(request));
+            if (policy == null)
+                response = await client.ExecuteTaskAsync(request);
+            else
+            {
+                Context context = new Context().WithLogger(_logger);
+                response = await policy.ExecuteAsync(ctx => client.ExecuteTaskAsync(request), context);
+            }
 
             string responseErr = null;
             ServiceResponseException responseEx = null;
+            HttpStatusCode responseCode = response.StatusCode;
             if (!response.IsSuccessful)
             {
-                responseErr = string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
-                LogFailedRequest(response.ErrorException, response.StatusCode, responseErr);
-                responseEx = new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
+                responseErr = !string.IsNullOrWhiteSpace(response.ErrorMessage) ? response.ErrorMessage : response.Content;
+                if (response.ResponseStatus == ResponseStatus.TimedOut)
+                    responseCode = HttpStatusCode.GatewayTimeout;
+                LogFailedRequest(response.ErrorException, responseCode, responseErr, fullUrl.ToString());
+                if (!string.IsNullOrWhiteSpace(responseErr) || response.ErrorException != null)
+                    responseEx = new ServiceResponseException(response.StatusCode, responseErr, response.ErrorException);
             }
 
-            return new ServiceResponse(response.Content, response, response.StatusCode, response.IsSuccessful, responseErr, responseEx);
+            return new ServiceResponse(response.Content, response, responseCode, response.IsSuccessful, responseErr, responseEx);
         }
 
         private RestRequest ConfigureRequest(string path, Method method, object body = null, List<RequestParameter> parameters = null, List<RequestHeader> headers = null)
@@ -227,10 +278,30 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
             return request;
         }
 
-        private void LogFailedRequest(Exception exception, HttpStatusCode statusCode, string message)
+        private void LogFailedRequest(Exception exception, HttpStatusCode statusCode, string message, string destinationUrl)
         {
             if (_logger != null)
-                _logger.LogError(exception, $"[ErroRequisicao][{statusCode}] {message}");
+                _logger.LogError($"[ErroRequisicao][{statusCode}]  Request failed to {destinationUrl}", message, exception);
+        }        
+    }
+
+    public static class ContextExtensions
+    {
+        private static readonly string LoggerKey = "ILogger";
+
+        public static Context WithLogger(this Context context, ILogger logger)
+        {
+            context[LoggerKey] = logger;
+            return context;
+        }
+
+        public static ILogger GetLogger(this Context context)
+        {
+            if (context.TryGetValue(LoggerKey, out object logger))
+            {
+                return logger as ILogger;
+            }
+            return null;
         }
     }
 
@@ -242,22 +313,34 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
 
     public interface IServiceCaller
     {
-        IServiceCaller Create();
-        IServiceCaller Create(ILogger logger);
-        IServiceCaller Create(ILogger logger, bool useFluentResponse);
+        IServiceCaller Create<T>(ILogger<T> logger, int requestTimeout = 5);
         void AddAuthorization(AuthenticationSchema schema, string hash);
         void AddHeader(string key, string value);
         void RemoveHeader(string key);
         void ClearHeaders();
         Task<ServiceResponse> DoGet(string baseUrl, string path);
+        Task<ServiceResponse> DoGet(string baseUrl, string path, AsyncPolicyWrap<IRestResponse> policy);
         Task<ServiceResponse> DoGet(string baseUrl, string path, params RequestParameter[] parameters);
+        Task<ServiceResponse> DoGet(string baseUrl, string path, AsyncPolicyWrap<IRestResponse> policy, params RequestParameter[] parameters);
         Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path) where T : new();
+        Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path, AsyncPolicyWrap<IRestResponse<T>> policy) where T : new();
         Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path, params RequestParameter[] parameters) where T : new();
+        Task<ServiceResponse<T>> DoGet<T>(string baseUrl, string path, AsyncPolicyWrap<IRestResponse<T>> policy, params RequestParameter[] parameters) where T : new();
         Task<ServiceResponse> DoPost(string baseUrl, string path);
         Task<ServiceResponse> DoPost(string baseUrl, string path, object body);
-        Task<ServiceResponse> DoPost(string baseUrl, string path, List<RequestParameter> parameters = null);
+        Task<ServiceResponse> DoPost(string baseUrl, string path, object body, AsyncPolicyWrap<IRestResponse> policy);
+        Task<ServiceResponse> DoPost(string baseUrl, string path, AsyncPolicyWrap<IRestResponse> policy, List<RequestParameter> parameters = null);
         Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path) where T : new();
         Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path, object body) where T : new();
-        Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path, List<RequestParameter> parameters = null) where T : new();
+        Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path, object body, AsyncPolicyWrap<IRestResponse<T>> policy) where T : new();
+        Task<ServiceResponse<T>> DoPost<T>(string baseUrl, string path, AsyncPolicyWrap<IRestResponse<T>> policy, List<RequestParameter> parameters = null) where T : new();
+
+        Task<ServiceResponse<T>> ExecuteRequest<T>(string baseUrl,
+            string path, Method method, object body = null, List<RequestParameter> parameters = null,
+            List<RequestHeader> headers = null, AsyncPolicyWrap<IRestResponse<T>> policy = null)
+            where T : new();
+
+        Task<ServiceResponse> ExecuteRequest(string baseUrl, string path, Method method, object body = null,
+            List<RequestParameter> parameters = null, List<RequestHeader> headers = null, AsyncPolicyWrap<IRestResponse> policy = null);
     }
 }
