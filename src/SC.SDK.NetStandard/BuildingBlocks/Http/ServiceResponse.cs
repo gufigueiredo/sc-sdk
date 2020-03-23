@@ -9,27 +9,31 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
         public string Content { get; }
         public IRestResponse Source { get; }
         public HttpStatusCode StatusCode { get; }
-        public bool Success { get; }
+        public bool RequestSuccess { get; }
+        public bool HasError { get; }
         public string ErrorMessage { get; }
         public ServiceResponseException Exception { get; }
-        public bool HasException { get => Exception != null; }
-
-        public ServiceResponse(string content, IRestResponse source, HttpStatusCode statusCode, bool success, string errorMessage, Exception ex)
-        {
-            Content = content;
-            StatusCode = statusCode;
-            Success = success;
-            ErrorMessage = errorMessage;
-            Exception = (ServiceResponseException)ex;
-            Source = source;
-        }
+        public bool HasException => Exception != null;
+        public bool ResourceNotFound => StatusCode == HttpStatusCode.NotFound;
+        public bool ResourceNullOrNotFound => ResourceNotFound || Content == null;
 
         protected ServiceResponse(HttpStatusCode statusCode, bool success, string errorMessage, Exception ex)
         {
             StatusCode = statusCode;
-            Success = success;
+            RequestSuccess = success;
             ErrorMessage = errorMessage;
             Exception = (ServiceResponseException)ex;
+            if (!success || (int)statusCode >= 500 || statusCode == HttpStatusCode.BadRequest || (int)statusCode == 0 || HasException)
+            {
+                HasError = true;
+            }
+        }
+
+        public ServiceResponse(string content, IRestResponse source, HttpStatusCode statusCode, bool success, string errorMessage, Exception ex)
+            : this(statusCode, success, errorMessage, ex)
+        {
+            Content = content;
+            Source = source;
         }
     }
 
@@ -38,6 +42,7 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
     {
         public new T Content { get; }
         public bool HasContent { get => Content != null; }
+        public new bool ResourceNullOrNotFound => ResourceNotFound || Content == null;
         public new IRestResponse<T> Source { get; }
         public ServiceResponse(T content, IRestResponse<T> source, HttpStatusCode statusCode, bool success, string errorMessage, Exception ex)
             : base(statusCode, success, errorMessage, ex)
@@ -48,7 +53,7 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
 
         public ServiceResponse<T> Then(Action<ServiceResponse<T>> callback)
         {
-            if (Success && callback != null)
+            if (RequestSuccess && callback != null)
             {
                 callback.Invoke(this);
             }
@@ -57,7 +62,7 @@ namespace SC.SDK.NetStandard.BuildingBlocks.Http
 
         public ServiceResponse<T> Catch(Action<ServiceResponse> callback)
         {
-            if (!Success && callback != null)
+            if (!RequestSuccess && callback != null)
             {
                 callback.Invoke(this);
             }
